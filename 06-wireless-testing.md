@@ -1,7 +1,7 @@
 # 📡 Wireless Testing
 
 
-# 📡 Aircrack-ng — WiFi Attack Suite
+# Aircrack-ng — WiFi Attack Suite
 
 > [!abstract] TL;DR
 > Suite: `airmon-ng` (monitor mode) → `airodump-ng` (capture) →
