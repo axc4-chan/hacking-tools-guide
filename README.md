@@ -1,4 +1,4 @@
-# 🛡️ Penetration Testing Toolkit — The Complete Guide
+# 🛡️ Penetration Testing Toolkit — The Complete Guide (vibe coded)
 
 A comprehensive, practical guide to industry-standard penetration testing tools —
 covering installation, core commands, real-world usage, and workflows.
