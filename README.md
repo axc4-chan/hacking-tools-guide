@@ -14,6 +14,8 @@ covering installation, core commands, real-world usage, and workflows.
 7. [Post-Exploitation](07-post-exploitation.md)
 8. [Contributing](08-contributing.md)
 
+9. + BONUS Full msfvenom guide
+
 ## ⚠️ Legal Notice
 
 Use these tools **only** on systems you own or have explicit written
